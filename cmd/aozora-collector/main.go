@@ -21,19 +21,23 @@ type Entry struct {
 	ZipURL   string
 }
 
-func findEntries(siteURL string) ([]Entry, error) {
-	res, err := http.Get(siteURL)
+func main() {
+	listURL := "https://www.aozora.gr.jp/index_pages/person879.html"
+
+	entries, err := findEntries(listURL)
 	if err != nil {
 		log.Fatal(err)
-	}
-	defer res.Body.Close()
-	if res.StatusCode != 200 {
-		log.Fatalf("status code error: %d %s", res.StatusCode, res.Status)
 	}
 
-	doc, err := goquery.NewDocumentFromReader(res.Body)
+	for _, entry := range entries {
+		fmt.Println(entry.Title, entry.ZipURL)
+	}
+}
+
+func findEntries(siteURL string) ([]Entry, error) {
+	doc, err := fetchDocument(siteURL)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 
 	pat := regexp.MustCompile(`.*/cards/([0-9]+)/card([0-9]+).html`)
@@ -58,24 +62,31 @@ func findEntries(siteURL string) ([]Entry, error) {
 				ZipURL:   zipURL,
 			})
 		}
-		println(zipURL)
 	})
 
 	return entries, nil
 }
 
-func findAuthorAndZIP(siteURL string) (string, string) {
-	log.Println("query", siteURL)
+func fetchDocument(siteURL string) (*goquery.Document, error) {
 	res, err := http.Get(siteURL)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 	defer res.Body.Close()
 	if res.StatusCode != 200 {
-		log.Fatalf("status code error: %d %s", res.StatusCode, res.Status)
+		return nil, fmt.Errorf("status code error: %d %s", res.StatusCode, res.Status)
 	}
 
 	doc, err := goquery.NewDocumentFromReader(res.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	return doc, err
+}
+
+func findAuthorAndZIP(siteURL string) (string, string) {
+	doc, err := fetchDocument(siteURL)
 	if err != nil {
 		return "", ""
 	}
@@ -104,17 +115,4 @@ func findAuthorAndZIP(siteURL string) (string, string) {
 
 	u.Path = path.Join(path.Dir(u.Path), zipURL)
 	return author, u.String()
-}
-
-func main() {
-	listURL := "https://www.aozora.gr.jp/index_pages/person879.html"
-
-	entries, err := findEntries(listURL)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	for _, entry := range entries {
-		fmt.Println(entry.Title, entry.ZipURL)
-	}
 }
