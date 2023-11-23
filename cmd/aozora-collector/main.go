@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
+	"path"
 	"regexp"
 	"strings"
 
@@ -50,6 +52,7 @@ func findEntries(siteURL string) ([]Entry, error) {
 }
 
 func findAuthorAndZIP(siteURL string) (string, string) {
+	log.Println("query", siteURL)
 	res, err := http.Get(siteURL)
 	if err != nil {
 		log.Fatal(err)
@@ -74,7 +77,20 @@ func findAuthorAndZIP(siteURL string) (string, string) {
 		}
 	})
 
-	return author, zipURL
+	if zipURL == "" {
+		return author, ""
+	}
+	if strings.HasPrefix(zipURL, "http://") || strings.HasPrefix(zipURL, "https://") {
+		return author, zipURL
+	}
+
+	u, err := url.Parse(siteURL)
+	if err != nil {
+		return author, ""
+	}
+
+	u.Path = path.Join(path.Dir(u.Path), zipURL)
+	return author, u.String()
 }
 
 func main() {
