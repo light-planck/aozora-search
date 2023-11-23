@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"strings"
 
 	"github.com/PuerkitoBio/goquery"
 )
@@ -41,10 +42,39 @@ func findEntries(siteURL string) ([]Entry, error) {
 		}
 
 		pageURL := fmt.Sprintf("https://www.aozora.gr.jp/cards/%s/card%s.html", token[1], token[2])
-		println(pageURL)
+		_, zipURL := findAuthorAndZIP(pageURL)
+		println(zipURL)
 	})
 
 	return nil, nil
+}
+
+func findAuthorAndZIP(siteURL string) (string, string) {
+	res, err := http.Get(siteURL)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != 200 {
+		log.Fatalf("status code error: %d %s", res.StatusCode, res.Status)
+	}
+
+	doc, err := goquery.NewDocumentFromReader(res.Body)
+	if err != nil {
+		return "", ""
+	}
+
+	author := doc.Find("table[summary=作家データ] tr:nth-child(1) td:nth-child(2)").Text()
+
+	zipURL := ""
+	doc.Find("table.download a").Each(func(_ int, elem *goquery.Selection) {
+		href := elem.AttrOr("href", "")
+		if strings.HasSuffix(href, ".zip") {
+			zipURL = href
+		}
+	})
+
+	return author, zipURL
 }
 
 func main() {
