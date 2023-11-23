@@ -18,6 +18,7 @@ import (
 	"github.com/ikawaha/kagome-dict/ipa"
 	"github.com/ikawaha/kagome/v2/tokenizer"
 	_ "github.com/mattn/go-sqlite3"
+	"golang.org/x/text/encoding/japanese"
 )
 
 type Entry struct {
@@ -65,8 +66,8 @@ func setupDB(dsn string) (*sql.DB, error) {
 	}
 
 	queries := []string{
-		`CREATE TABLE IF  NOT EXISTS authors(author_id TEXT, author TEXT, PRIMARY KEY(author_id))`,
-		`CREATE TABLE IF NOT EXISTS contents(author_id TEXT, title_id TEXT, title TEXT, content TEXT, PRIMARY KEY(author_id, title_id))`,
+		`CREATE TABLE IF NOT EXISTS authors(author_id TEXT, author TEXT, PRIMARY KEY (author_id))`,
+		`CREATE TABLE IF NOT EXISTS contents(author_id TEXT, title_id TEXT, title TEXT, content TEXT, PRIMARY KEY (author_id, title_id))`,
 		`CREATE VIRTUAL TABLE IF NOT EXISTS contents_fts USING fts4(words)`,
 	}
 	for _, query := range queries {
@@ -163,35 +164,39 @@ func findAuthorAndZIP(siteURL string) (string, string) {
 }
 
 func extractText(zipURL string) (string, error) {
+	log.Println("query", zipURL)
+	
 	resp, err := http.Get(zipURL)
 	if err != nil {
-		return "", nil
+		return "", err
 	}
 	defer resp.Body.Close()
 
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", nil
+		return "", err
 	}
 
 	r, err := zip.NewReader(bytes.NewReader(b), int64(len(b)))
 	if err != nil {
-		return "", nil
+		return "", err
 	}
 
 	for _, file := range r.File {
 		if path.Ext(file.Name) == ".txt" {
 			f, err := file.Open()
 			if err != nil {
-				return "", nil
+				return "", err
 			}
-
 			b, err := io.ReadAll(f)
 			f.Close()
 			if err != nil {
-				return "", nil
+				return "", err
 			}
-
+			b, err = japanese.ShiftJIS.NewDecoder().Bytes(b)
+			if err != nil {
+				return "", err
+			}
 			return string(b), nil
 		}
 	}
@@ -201,8 +206,8 @@ func extractText(zipURL string) (string, error) {
 
 func addEntry(db *sql.DB, entry *Entry, content string) error {
 	_, err := db.Exec(`
-		REPLACE INTO authors(author_id, author) VALUES(?, ?)
-	`,
+        REPLACE INTO authors(author_id, author) values(?, ?)
+    `,
 		entry.AuthorID,
 		entry.Author,
 	)
@@ -211,8 +216,8 @@ func addEntry(db *sql.DB, entry *Entry, content string) error {
 	}
 
 	res, err := db.Exec(`
-		REPLACE INTO  contents(author_id, title_id, title, content) values(?, ?, ?, ?)
-	`,
+        REPLACE INTO contents(author_id, title_id, title, content) values(?, ?, ?, ?)
+    `,
 		entry.AuthorID,
 		entry.TitleID,
 		entry.Title,
@@ -229,13 +234,18 @@ func addEntry(db *sql.DB, entry *Entry, content string) error {
 
 	t, err := tokenizer.New(ipa.Dict(), tokenizer.OmitBosEos())
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	seg := t.Wakati(content)
-	_, err = db.Exec(`REPLACE INTO contents_fts(docid, words) values(?, ?)`, docID, strings.Join(seg, " "))
+	_, err = db.Exec(`
+        REPLACE INTO contents_fts(docid, words) values(?, ?)
+    `,
+		docID,
+		strings.Join(seg, " "),
+	)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	return nil
